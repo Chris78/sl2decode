@@ -44,6 +44,7 @@ block_def = {
 #  'upperLimit' => {:offset=>38, :type=>'e'},
 #  'lowerLimit' => {:offset=>42, :type=>'e'},
 #  'frequency' => {:offset=>51, :type=>'C'},
+  'time1' => {:offset=>58, :type=>'V'},
   'waterDepthFt' => {:offset=>62, :type=>'e'},    # in feet
 #  'keelDepthFt' => {:offset=>66, :type=>'e'},    # in feet
 #  'speedGpsKnots' => {:offset=>98, :type=>'e'},  # in knots
@@ -51,15 +52,15 @@ block_def = {
   'lowrance_longitude' => {:offset=>106, :type=>'V'},    # Lowrance encoding (easting)
   'lowrance_latitude' => {:offset=>110, :type=>'V'},     # Lowrance encoding (northing)
 #  'speedWaterKnots' => {:offset=>114, :type=>'e'},   # from "water wheel sensor" if present, else GPS value(?)
-#  'courseOverGround' => {:offset=>118, :type=>'e'},  # ourseOverGround in radians
+#  'courseOverGround' => {:offset=>118, :type=>'e'},  # courseOverGround in radians
 #  'altitudeFt' => {:offset=>122, :type=>'e'},   # in feet
 #  'heading' => {:offset=>126, :type=>'e'},      # in radians
-#  'flags' => {:offset=>130, :type=>'v'},
-#  'time' => {:offset=>140, :type=>'V'}          # unknown resolution, unknown epoche
+   'flags' => {:offset=>130, :type=>'v'},
+  'time' => {:offset=>138, :type=>'V'}          # unknown resolution, unknown epoche (probably seconds since beginning of day 
 }
 
 
-while block_offset<s.length do
+while output.length<20 && block_offset<s.length do
   h={}
   block_def.each do |key,bdef|
     h[key] = s[block_offset+bdef[:offset], block_offset+bdef[:offset]+4].unpack(bdef[:type]).first
@@ -79,10 +80,21 @@ while block_offset<s.length do
   output << h.dup
 end; puts "Found and decoded #{output.length} data blocks."
 
-f=File.open('sl2_to_hash_output.txt', 'w')
-f.puts("Found #{output.length} blocks.")
-f.puts(output.inspect);
-f.puts('--------------- YAML ------------------')
-f.puts(output.to_yaml);
+puts output.to_yaml
+exit
+
+f=File.open("#{ARGV[0]}_output.csv", 'w')
+output2=output.map{|x| {'latitude'=>x['latitude'], 'longitude'=>x['longitude'], 'waterDepthM'=>x['waterDepthM']}}
+output2.group_by{|x| [x['latitude'],x['longitude']]}.each do |ll,data|
+  avg_depth = 0
+  data.map{|y| y['waterDepthM']}.each{|summand| avg_depth+=summand}
+  avg_depth = avg_depth / data.length
+  f.puts [ll[0], ll[1], avg_depth].join(';')
+end
+
+#f.puts("Found #{output.length} blocks.")
+#f.puts(output.inspect);
+#f.puts('--------------- YAML ------------------')
+#f.puts(output.to_yaml);
 f.close
 
