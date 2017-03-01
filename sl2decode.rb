@@ -3,6 +3,7 @@ require 'yaml'
 # Constants:
 POLAR_EARTH_RADIUS = 6356752.3142
 PI = Math::PI
+MAX_UINT4 = 4294967295
 FT2M = 1/3.2808399  # factor for feet to meter conversions
 KN2KM = 1/1.852     # factor for knots to km conversions
 
@@ -78,13 +79,26 @@ while block_offset<File.size(ARGV[0]) do
     f.seek(block_offset+bdef[:offset])
     h[key] = f.read(bdef[:len]).unpack(bdef[:type]).first
   end
-  # Some Conversions into non proprietary formats:
+
+
+  # A few conversions into non proprietary or metric formats:
+
   h['longitude'] = h['lowrance_longitude']/POLAR_EARTH_RADIUS * (180/PI) if h.has_key?('lowrance_longitude')
+  # [ Caution! ] If the expected longitude (in decimal degrees) is *negative*, use the following line instead:
+  # h['longitude'] = (h['lowrance_longitude'] - MAX_UNIT4) / POLAR_EARTH_RADIUS * (180/PI) if h.has_key?('lowrance_longitude')
+
   h['latitude'] = ((2*Math.atan(Math.exp(h['lowrance_latitude']/POLAR_EARTH_RADIUS)))-(PI/2)) * (180/PI) if h.has_key?('lowrance_latitude')
+
   h['waterDepthM'] = h['waterDepthFt'] * FT2M if h.has_key?('waterDepthFt')
+
   h['keelDepthM']  = h['keelDepthFt'] * FT2M if h.has_key?('keelDepthFt')
+
   h['altitudeM']   = h['altitudeFt'] * FT2M if h.has_key?('altitudeFt')
+
   h['speedGpsKm']  = h['speedGpsKnots'] * KN2KM if h.has_key?('speedGpsKnots')
+
+
+
   begin
     block_offset += h['blockSize']
   rescue
