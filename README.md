@@ -23,7 +23,7 @@ on how to convert the coordinates.
 Important Hint!
 
 If you expect negative longitude values (decimal degrees) then 
-uncomment the line 88, since the conversion from "lowrance_longitude" into
+uncomment line 88, since the conversion from "lowrance_longitude" into
 decimal coordinates works a bit different in that case.
 
 
