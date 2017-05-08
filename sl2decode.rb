@@ -12,17 +12,12 @@ if ARGV[0].to_s==''
   exit
 end
 
-# Read given sl2 file:
-#f=File.open(ARGV[0], 'rb')
-#s=f.read(); "#{s.length} Bytes read"
-#f.close
-
 block_offset=0
 
 # 10 Bytes Header
-block_offset+=10   # Startindex of the first block
+block_offset+=10   # Startindex of the first block (i.e. skip the header)
 
-# Datentypen:
+# Datatypes:
 # ===================================================================================================
 # Type    Definition                                          Directive for Ruby's String#unpack
 # ---------------------------------------------------------------------------------------------------
@@ -61,83 +56,79 @@ block_def = {
 f_raw = File.open("#{ARGV[0]}_output_raw.csv",'w')
 
 begin
-output = []
 output_h = {}
+alive_counter = 0   # counter to regularly show, that the script is still running
+
+puts "Hit Ctrl+c to abort. The CSV-File will still contain all records parsed so far."
+sleep 3
 
 open ARGV[0], 'r' do |f|
-#  f.seek 10 # Header
-#  s = f.read 32
-#end
+  sl2_file_size = File.size(ARGV[0])
+  while block_offset<sl2_file_size do
+    h={}
+    alive_counter += 1
+    if alive_counter % 100 == 0
+      puts "#{(100.0*block_offset/sl2_file_size).round}% done..."
+    end
 
-while block_offset<File.size(ARGV[0]) do
-  h={}
-  #b_sz = h['blockSize'] = s[block_offset+block_def['blockSize'][:offset], block_offset+block_def['blockSize'][:offset]+block_def['blockSize'][:len]].unpack(block_def['blockSize'][:type]).first
-	#f.seek(block_offset+block_def['blockSize'][:offset])
-	#b_sz = h['blockSize'] = f.read(block_def['blockSize'][:offset]+block_def['blockSize'][:len]].unpack(block_def['blockSize'][:type]).first
-	#ss = s[block_offset, block_offset+b_sz]
-  block_def.each do |key,bdef|
-    f.seek(block_offset+bdef[:offset])
-    h[key] = f.read(bdef[:len]).unpack(bdef[:type]).first
+    block_def.each do |key,bdef|
+      f.seek(block_offset+bdef[:offset])
+      h[key] = f.read(bdef[:len]).unpack(bdef[:type]).first
+    end
+
+
+    # A few conversions into non-proprietary or metric formats:
+    # =========================================================
+
+    h['longitude'] = h['lowrance_longitude']/POLAR_EARTH_RADIUS * (180/PI) if h.has_key?('lowrance_longitude')
+    # [ Caution! ] If the expected longitude (in decimal degrees) is *negative*, use the following line instead:
+    # h['longitude'] = (h['lowrance_longitude'] - MAX_UINT4) / POLAR_EARTH_RADIUS * (180/PI) if h.has_key?('lowrance_longitude')
+
+    h['latitude'] = ((2*Math.atan(Math.exp(h['lowrance_latitude']/POLAR_EARTH_RADIUS)))-(PI/2)) * (180/PI) if h.has_key?('lowrance_latitude')
+
+    h['waterDepthM'] = h['waterDepthFt'] * FT2M if h.has_key?('waterDepthFt')
+
+    h['keelDepthM']  = h['keelDepthFt'] * FT2M if h.has_key?('keelDepthFt')
+
+    h['altitudeM']   = h['altitudeFt'] * FT2M if h.has_key?('altitudeFt')
+
+    h['speedGpsKm']  = h['speedGpsKnots'] * KN2KM if h.has_key?('speedGpsKnots')
+
+
+
+    begin
+      if h['blockSize']==0   # corrupt sl2 files may lead to this
+        puts "ABORTING, blockSize=0 found, which will otherwise lead to endless loop."
+        exit
+      end
+      block_offset += h['blockSize']
+    rescue
+      raise h.inspect
+    end
+
+    # Save only one set of data per GPS position to csv-file:
+    unless output_h[[h['latitude'], h['longitude']]]
+      output_h[[h['latitude'], h['longitude']]] = h['waterDepthM']
+
+      # Here we prepare one line that will be written into the csv-file. Adjust to your personal needs:
+      csv_line = [h['longitude'], h['latitude'], h['waterDepthM']].join(' ')+';'
+
+      # Finally the prepared line is written to the csv-file:
+      f_raw.puts(csv_line)
+    end
   end
 
-
-  # A few conversions into non proprietary or metric formats:
-
-  h['longitude'] = h['lowrance_longitude']/POLAR_EARTH_RADIUS * (180/PI) if h.has_key?('lowrance_longitude')
-  # [ Caution! ] If the expected longitude (in decimal degrees) is *negative*, use the following line instead:
-  # h['longitude'] = (h['lowrance_longitude'] - MAX_UNIT4) / POLAR_EARTH_RADIUS * (180/PI) if h.has_key?('lowrance_longitude')
-
-  h['latitude'] = ((2*Math.atan(Math.exp(h['lowrance_latitude']/POLAR_EARTH_RADIUS)))-(PI/2)) * (180/PI) if h.has_key?('lowrance_latitude')
-
-  h['waterDepthM'] = h['waterDepthFt'] * FT2M if h.has_key?('waterDepthFt')
-
-  h['keelDepthM']  = h['keelDepthFt'] * FT2M if h.has_key?('keelDepthFt')
-
-  h['altitudeM']   = h['altitudeFt'] * FT2M if h.has_key?('altitudeFt')
-
-  h['speedGpsKm']  = h['speedGpsKnots'] * KN2KM if h.has_key?('speedGpsKnots')
+  # When finished, output some statistics:
+  puts "Found and decoded #{output_h.keys.length} data blocks (distinct gps positions)."
 
 
+end # of "open ... do |f|"
 
-  begin
-    block_offset += h['blockSize']
-  rescue
-    raise h.inspect
-  end
-  #output << h.dup
-  unless output_h[[h['latitude'], h['longitude']]]
-  output_h[[h['latitude'], h['longitude']]] = h['waterDepthM']
-    #f_raw.puts([h['longitude'], h['latitude'], h['waterDepthM']].join(';').gsub('.',','))
-    f_raw.puts([h['longitude'], h['latitude'], h['waterDepthM']].join(' ')+';')
-  end
-end; 
-#puts "Found and decoded #{output.length} data blocks."
-puts "Found and decoded #{output_h.keys.length} data blocks."
-
-
-end # von open ... do |f|
-
-#puts output.to_yaml
-#puts output_h.to_yaml
-#exit
-
-#f=File.open("#{ARGV[0]}_output.csv", 'w')
-#output2=output.map{|x| {'latitude'=>x['latitude'], 'longitude'=>x['longitude'], 'waterDepthM'=>x['waterDepthM']}}
-#output2.group_by{|x| [x['latitude'],x['longitude']]}.each do |ll,data|
-#  avg_depth = 0
-#  data.map{|y| y['waterDepthM']}.each{|summand| avg_depth+=summand}
-#  avg_depth = avg_depth / data.length
-#  f.puts [ll[0], ll[1], avg_depth].join(';')
-#end
-#f.puts("Found #{output.length} blocks.")
-#f.puts(output.inspect);
-#f.puts('--------------- YAML ------------------')
-#f.puts(output.to_yaml);
-#f.close
 rescue Exception => err
 	puts err.to_s
 	puts err.inspect	
-ensure
+ensure  # even on ctrl+c ensure that the csv-file is finally closed:
  	f_raw.close
 	puts "Read up to block_offset #{block_offset}"
 end
+
